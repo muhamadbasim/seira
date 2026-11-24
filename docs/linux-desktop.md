@@ -116,6 +116,52 @@ A full desktop install (for example EndeavourOS with KDE or GNOME) usually has a
 `--needed` skips the ones that are present. This was checked with the v0.1.138 AppImage on a current Arch
 Linux image (fuse3 3.18, gtk3 3.24, mesa 26.2): the app opens to the welcome screen.
 
+### Add the AppImage to your launcher
+
+The AppImage does not install system files, so launchers such as GNOME's, `walker` on Omarchy, `rofi` or
+`wofi` only show it if you give them a desktop entry. A hand-written entry without an `Icon=` line shows a
+generic gear icon. The AppImage carries the icon and the right window class, so copy them out once:
+
+```sh
+mkdir -p ~/Applications ~/.local/share/icons/hicolor/scalable/apps ~/.local/share/applications
+mv Seira.AppImage ~/Applications/Seira.AppImage
+
+cd "$(mktemp -d)"
+~/Applications/Seira.AppImage --appimage-extract 'usr/share/icons/hicolor/scalable/apps/seira.svg'
+cp squashfs-root/usr/share/icons/hicolor/scalable/apps/seira.svg ~/.local/share/icons/hicolor/scalable/apps/
+```
+
+Then write the desktop entry. `Exec=` needs an absolute path, because desktop entries do not expand `~`, so this
+command fills in your home folder:
+
+```sh
+cat > ~/.local/share/applications/seira.desktop <<EOF
+[Desktop Entry]
+Name=Seira
+Comment=A local-first chat app for running a team of AI agents.
+Exec=$HOME/Applications/Seira.AppImage %U
+Icon=seira
+StartupWMClass=bot.seira.app
+Terminal=false
+Type=Application
+Categories=Utility;
+MimeType=x-scheme-handler/seira;
+EOF
+```
+
+- `Icon=seira` finds the icon you copied by name in the `hicolor` theme.
+- `StartupWMClass=bot.seira.app` ties the open window to this entry, so the launcher and taskbar show one Seira.
+  On Hyprland you can confirm the class with `hyprctl clients | grep class`.
+- Add `--ozone-platform-hint=auto` before `%U` if your Wayland session needs it.
+- An in-app update replaces the AppImage at the same path, so the entry keeps working.
+
+If the launcher still shows the old icon, refresh the caches and restart it (on Omarchy, `omarchy-restart-walker`):
+
+```sh
+gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor
+update-desktop-database ~/.local/share/applications
+```
+
 ### Updating
 
 The app checks for updates in the background and downloads them by itself. Nothing restarts until you click
