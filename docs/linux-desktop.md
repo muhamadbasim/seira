@@ -138,7 +138,7 @@ command fills in your home folder:
 cat > ~/.local/share/applications/seira.desktop <<EOF
 [Desktop Entry]
 Name=Seira
-Comment=A local-first chat app for running a team of AI agents.
+Comment=Your own team of AI agents in one chat app
 Exec=$HOME/Applications/Seira.AppImage %U
 Icon=seira
 StartupWMClass=bot.seira.app
