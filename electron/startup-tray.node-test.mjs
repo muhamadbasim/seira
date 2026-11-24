@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import vm from "node:vm";
 import nativeText from "./native-text.cjs";
 import { createStartupScreen, startupScreenHtml } from "./startup-screen.mjs";
 import { FINISH_MS, STEP_AT, createLine } from "./splash/line.js";
@@ -357,7 +358,7 @@ test("the startup page keeps its tight CSP and carries the glow line and the sti
   assert.match(html, /<div class="line" aria-hidden="true"><div class="fill"><\/div><span class="head"><\/span><\/div>/);
   assert.match(html, /<script>window\.__SEIRA_KIT=\{/);
   assert.ok(!/<(script|link|iframe)[^>]+(src|href)=/.test(html), "no external loads");
-  assert.equal(html.split("</script>").length, 3, "two inline scripts, none closed early");
+  assert.equal(html.split("</script>").length, 4, "three inline scripts, none closed early");
 });
 
 test("without the character kit the page still has the still image and the line", () => {
@@ -401,5 +402,32 @@ test("the packaged app keeps every module that a main process file imports", () 
       const target = `electron/${spec.slice(2)}`;
       assert.ok(!excluded.some((pattern) => pattern.test(target)), `${file} imports ${target}, but electron-builder.yml leaves it out`);
     }
+  }
+});
+
+const fitPage = (html, devicePixelRatio) => {
+  const scale = /data-display-scale="([^"]*)"/.exec(html)?.[1];
+  const root = { dataset: scale === undefined ? {} : { displayScale: scale }, style: {}, classes: [], classList: { add(name) { root.classes.push(name); } } };
+  vm.runInNewContext(/<script>(\(\(\) => \{ const root[\s\S]*?)<\/script>/.exec(html)[1], { document: { documentElement: root }, devicePixelRatio });
+  return root;
+};
+
+test("the loading screen shrinks back to its window when Linux text scaling makes the page larger", () => {
+  const scaled = fitPage(startupScreenHtml({ displayScale: 1 }), 1.359375);
+  assert.equal(Number(scaled.style.zoom).toFixed(4), (1 / 1.359375).toFixed(4));
+  assert.deepEqual(scaled.classes, ["fit"]);
+  for (const [displayScale, ratio] of [[1, 1], [2, 2], [1.5, 1.5], [null, 1.359375]]) {
+    const page = fitPage(startupScreenHtml({ displayScale }), ratio);
+    assert.equal(page.style.zoom, undefined); assert.deepEqual(page.classes, []);
+  }
+});
+
+test("only Linux tells the loading screen its display scale", () => {
+  for (const [platform, expected] of [["linux", true], ["win32", false], ["darwin", false]]) {
+    let url = "";
+    class Loaded extends Window { loadURL(value) { url = value; return super.loadURL(value); } }
+    const { splash } = fixture({ BrowserWindow: Loaded, platform, displayScale: () => 1.25 });
+    assert.equal(decodeURIComponent(url).includes('data-display-scale="1.25"'), expected, platform);
+    splash.dispose();
   }
 });
