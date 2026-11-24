@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import vm from "node:vm";
 import nativeText from "./native-text.cjs";
-import { createStartupScreen, startupScreenHtml } from "./startup-screen.mjs";
+import { createStartupScreen, fitScript, startupScreenHtml } from "./startup-screen.mjs";
 import { FINISH_MS, STEP_AT, createLine } from "./splash/line.js";
 import { createSystemTray } from "./system-tray.mjs";
 
@@ -20,6 +20,7 @@ class Window extends EventEmitter {
     this.webContents.send = (channel, payload) => { this.webContents.sent.push([channel, payload]); };
   }
   setMenu() {}
+  getBounds() { return this.bounds ?? { x: 0, y: 0, width: 440, height: 300 }; }
   loadURL() { queueMicrotask(() => this.emit("ready-to-show")); return Promise.resolve(); }
   isDestroyed() { return this.destroyed; }
   destroy() { this.destroyed = true; this.emit("closed"); }
@@ -408,7 +409,8 @@ test("the packaged app keeps every module that a main process file imports", () 
 const fitPage = (html, devicePixelRatio) => {
   const scale = /data-display-scale="([^"]*)"/.exec(html)?.[1];
   const root = { dataset: scale === undefined ? {} : { displayScale: scale }, style: {}, classes: [], classList: { add(name) { root.classes.push(name); } } };
-  vm.runInNewContext(/<script>(\(\(\) => \{ const root[\s\S]*?)<\/script>/.exec(html)[1], { document: { documentElement: root }, devicePixelRatio });
+  assert.ok(html.includes(`<script>${fitScript}</script>`));
+  vm.runInNewContext(fitScript, { document: { documentElement: root }, devicePixelRatio });
   return root;
 };
 
@@ -430,4 +432,20 @@ test("only Linux tells the loading screen its display scale", () => {
     assert.equal(decodeURIComponent(url).includes('data-display-scale="1.25"'), expected, platform);
     splash.dispose();
   }
+});
+
+test("the loading screen uses the scale of the display that matches its window bounds, not the primary display", () => {
+  let url = ""; let asked = null;
+  class Loaded extends Window {
+    bounds = { x: 2560, y: 0, width: 440, height: 300 };
+    loadURL(value) { url = value; return super.loadURL(value); }
+  }
+  const screen = {
+    getPrimaryDisplay: () => ({ scaleFactor: 1 }),
+    getDisplayMatching: (bounds) => { asked = bounds; return { scaleFactor: bounds.x >= 2560 ? 2 : 1 }; },
+  };
+  const { splash } = fixture({ BrowserWindow: Loaded, platform: "linux", screen });
+  assert.equal(asked.x, 2560);
+  assert.ok(decodeURIComponent(url).includes('data-display-scale="2"'));
+  splash.dispose();
 });

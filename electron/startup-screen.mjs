@@ -19,15 +19,19 @@ function systemReducedMotion() {
 const SPLASH_WIDTH = 440;
 const SPLASH_HEIGHT = 300;
 
-// On Wayland, Chromium (Electron 43) folds the GNOME text-scaling-factor into devicePixelRatio but sizes a window it
+// On Linux (seen on Wayland), Chromium (Electron 43) folds the GNOME text-scaling-factor into devicePixelRatio but sizes a window it
 // places itself without it, so the page draws larger than the window and the compositor crops it. The page undoes the
 // extra factor with CSS zoom; Electron's own zoom is saved per origin and would leak into later starts.
-const fitScript = `(() => { const root = document.documentElement, scale = Number(root.dataset.displayScale);
+export const fitScript = `(() => { const root = document.documentElement, scale = Number(root.dataset.displayScale);
 if (!(scale > 0)) return; const extra = devicePixelRatio / scale; if (Math.abs(extra - 1) < 0.01) return;
 root.style.zoom = String(1 / extra); root.classList.add("fit"); })();`;
 
-function primaryDisplayScale() {
-  try { return createRequire(import.meta.url)("electron").screen?.getPrimaryDisplay().scaleFactor ?? null; } catch { return null; }
+function electronScreen() {
+  try { return createRequire(import.meta.url)("electron").screen ?? null; } catch { return null; }
+}
+
+function windowDisplayScale(screen, win) {
+  try { return screen?.getDisplayMatching(win.getBounds()).scaleFactor ?? null; } catch { return null; }
 }
 
 export function startupScreenHtml({ t = nativeText.englishText.t, lang = "en", reducedMotion = false, displayScale = null } = {}) {
@@ -65,7 +69,7 @@ export function startupScreenHtml({ t = nativeText.englishText.t, lang = "en", r
 export function createStartupScreen({
   BrowserWindow, iconPath, platform = process.platform, isQuitting, onQuit,
   onHide, isHidden = () => false, onShow, onFinished, t, lang, reducedMotion = systemReducedMotion,
-  displayScale = primaryDisplayScale,
+  screen = electronScreen(), displayScale = (win) => windowDisplayScale(screen, win),
 }) {
   let disposed = false, revealed = false, fallback, finishTimer, resolveReady;
   let reached = -1, finished = false;
@@ -127,7 +131,7 @@ export function createStartupScreen({
   splash.webContents.on("did-finish-load", () => { say(); sendProgress(); });
   const startupFallback = setTimeout(resolveReady, 10_000);
   startupFallback.unref?.();
-  void splash.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(startupScreenHtml({ t, lang, reducedMotion: reducedMotion(), displayScale: platform === "linux" ? displayScale() : null })))
+  void splash.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(startupScreenHtml({ t, lang, reducedMotion: reducedMotion(), displayScale: platform === "linux" ? displayScale(splash) : null })))
     .catch(resolveReady);
   /** Moves the glow line to a startup step. The line never moves back. */
   const progress = (step) => {
