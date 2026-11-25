@@ -284,8 +284,8 @@ fail-closed on Wayland. XWayland's `DISPLAY` never bypasses the Wayland safety g
 ### Glance on tiling Wayland compositors
 
 On Wayland, Glance runs in a small helper window on XWayland so it can stay on top. Tiling compositors such as
-Hyprland and Sway do not tell XWayland where a top panel (Waybar and similar) sits, so Glance used to open
-underneath it. Seira now asks for the panel's height when the visor opens, and each time it appears again:
+Hyprland and Sway do not tell XWayland where a top panel (Waybar and similar) sits, so Seira asks the compositor
+for the panel's height when the visor opens and each time it appears again:
 
 - **Hyprland** (when `HYPRLAND_INSTANCE_SIGNATURE` is set): the monitor's reserved top space from `hyprctl monitors -j`.
 - **Sway** (when `SWAYSOCK` is set): the offset of the focused workspace from `swaymsg -t get_workspaces`.

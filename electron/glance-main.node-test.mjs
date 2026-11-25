@@ -21,18 +21,18 @@ function world({ wayland = false, hidden = false, focused = false, x11 = false, 
     render(p) { fakeVisor.renders.push(p); fakeVisor.shown = true; }, hide() { fakeVisor.hides++; fakeVisor.shown = false; }, close() { fakeVisor.closed++; }, setSize(s) { fakeVisor.sizes.push(s); return true; } };
   const fakeTray = { updates: [], destroyed: 0, update(v) { fakeTray.updates.push(v); }, destroy() { fakeTray.destroyed++; }, relabel() {} };
   const prefs = { glanceHidden: () => hidden, setGlanceHidden: (v) => { hidden = v; saved.push(v); } };
-  const reveals = [], helpers = [], order = [];
+  const reveals = [], helpers = [], order = [], visorOptions = [];
   const glance = installGlance({
     ipcMain: { on: (c, f) => { handlers.on[c] = f; }, handle: (c, f) => { handlers.handle[c] = f; } },
     screen: {}, BrowserWindow: class {}, Tray: class {}, Menu: {}, nativeImage: {}, fetch: async () => ({ ok: false }),
     getMainWindow: () => win, prefs, t: (k) => k, revealChat: (target) => reveals.push(target), isWayland: wayland, platform: "linux",
     setTimer: (fn, ms) => { const t = { fn, ms }; timers.push(t); return t; }, clearTimer: () => {},
-    createVisor: () => { visors.push(fakeVisor); return fakeVisor; }, createTray: () => { trays.push(fakeTray); return fakeTray; },
+    createVisor: (options) => { visorOptions.push(options); visors.push(fakeVisor); return fakeVisor; }, createTray: () => { trays.push(fakeTray); return fakeTray; },
     x11Available: x11, resolveInset, createHelperVisor: (hooks) => { const h = { ...fakeVisor, hooks, closed: 0, renders: [], hides: 0, shown: false, contents: () => null, visible: () => h.shown, setTopInset(n) { order.push(["inset", n]); }, render(p) { order.push(["render"]); h.renders.push(p); h.shown = true; }, hide() { h.hides++; h.shown = false; }, close() { h.closed++; } }; helpers.push(h); return h; },
   });
   const page = { sender: contents, senderFrame: mainFrame };
   const send = (raw, event = page) => handlers.on["glance:feed"](event, raw);
-  return { order, helpers, glance, handlers, log, timers, fakeVisor, fakeTray, visors, trays, saved, reveals, page, contents, mainFrame, win, send, visorEvent: { sender: visorContents, senderFrame: visorContents.mainFrame } };
+  return { visorOptions, order, helpers, glance, handlers, log, timers, fakeVisor, fakeTray, visors, trays, saved, reveals, page, contents, mainFrame, win, send, visorEvent: { sender: visorContents, senderFrame: visorContents.mainFrame } };
 }
 
 test("AC-15 a feed from a subframe, another page or the wrong origin is ignored", () => {
@@ -341,4 +341,33 @@ test("a resolver that rejects still draws, with inset 0", async () => {
   w.send(feed(bot("a")));
   await settle();
   assert.deepEqual(w.order, [["inset", 0], ["render"]]);
+});
+
+test("in the X11-only path the visor reads the resolved inset through its getter", async () => {
+  const w = world({ resolveInset: async () => 35 });
+  w.send(feed(bot("a", { state: "needs", ask: approval })));
+  assert.equal(w.visors.length, 1);
+  await settle();
+  assert.equal(w.visorOptions[0].topInset(), 35);
+  assert.equal(w.fakeVisor.renders.length, 1);
+});
+
+test("a probe that was started before a hide is discarded, and the next show probes again", async () => {
+  const pending = [];
+  const w = world({ wayland: true, x11: true, resolveInset: () => new Promise((resolve) => pending.push(resolve)) });
+  const shown = () => feed(bot("a", { state: "needs", ask: approval }));
+  w.send(shown());
+  await settle();
+  assert.equal(pending.length, 1);
+  w.send(feed());
+  w.send(shown());
+  await settle();
+  assert.equal(pending.length, 2);
+  pending[0](10);
+  await settle();
+  assert.deepEqual(w.order, []);
+  assert.equal(pending.length, 2);
+  pending[1](50);
+  await settle();
+  assert.deepEqual(w.order, [["inset", 50], ["render"]]);
 });
