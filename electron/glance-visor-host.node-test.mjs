@@ -129,3 +129,34 @@ test("AC-10 the helper loads only the local visor page and opens no port", async
   const source = readFileSync(new URL("./glance-visor-host.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(source, /\b(listen|createServer|loadURL|loadFile|console\.)/);
 });
+
+test("an inset line moves the real window to y 43, and a bad value is ignored", async () => {
+  const sets = [];
+  const display = { bounds: { x: 0, y: 0, width: 1000, height: 800 }, workArea: { x: 0, y: 0, width: 1000, height: 800 } };
+  class Win extends EventEmitter {
+    constructor() { super(); this.webContents = Object.assign(new EventEmitter(), { mainFrame: {}, setWindowOpenHandler() {}, executeJavaScript: async () => {} }); }
+    isDestroyed() { return false; } setBounds(b) { sets.push(b); } setAlwaysOnTop() {} setVisibleOnAllWorkspaces() {} showInactive() {} hide() {} destroy() {}
+    loadURL() { return Promise.resolve(); }
+  }
+  const input = new EventEmitter();
+  const app = Object.assign(new EventEmitter(), { setPath() {}, whenReady: () => Promise.resolve(), quit() {} });
+  const started = runGlanceVisorHost({ app, BrowserWindow: Win, screen: Object.assign(new EventEmitter(), { getPrimaryDisplay: () => display }), ipcMain: { handle() {} }, input, output: { write() {} }, argv: ["--seira-glance-visor=/tmp-x/g"] });
+  await started;
+  const line = (obj) => input.emit("data", `${JSON.stringify(obj)}\n`);
+  line({ t: "render", payload: { entries: [] } });
+  line({ t: "inset", top: 35 });
+  assert.equal(sets.at(-1).y, 43);
+  const count = sets.length;
+  for (const top of [-1, "35", 1e6, 401, 3.5, null, undefined, {}]) line({ t: "inset", top });
+  assert.equal(sets.length, count);
+  assert.equal(sets.at(-1).y, 43);
+});
+
+test("an inset line reaches the visor's setTopInset only when valid", async () => {
+  const w = world();
+  await w.started;
+  w.visor.insets = [];
+  w.visor.setTopInset = (n) => w.visor.insets.push(n);
+  for (const top of [0, 35, 400, -1, "35", 1e6]) w.feedLine({ t: "inset", top });
+  assert.deepEqual(w.visor.insets, [0, 35, 400]);
+});

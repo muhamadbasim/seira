@@ -10,7 +10,7 @@ const bot = (id, extra = {}) => ({ botId: id, threadId: `t-${id}`, name: id, ava
 const approval = { kind: "approval", requestId: "r1", title: "Run", detail: "ls", choices: [], canAlways: true };
 const feed = (...bots) => ({ version: 1, lang: "en", bots, labels: LABELS });
 
-function world({ wayland = false, hidden = false, focused = false, x11 = false } = {}) {
+function world({ wayland = false, hidden = false, focused = false, x11 = false, resolveInset = null } = {}) {
   const log = [], timers = [], handlers = { on: {}, handle: {} };
   const mainFrame = { url: `${ORIGIN}/` };
   const contents = Object.assign(new EventEmitter(), { mainFrame, isLoadingMainFrame: () => false, getURL: () => `${ORIGIN}/x`, send: (channel, payload) => log.push({ channel, payload }) });
@@ -21,18 +21,18 @@ function world({ wayland = false, hidden = false, focused = false, x11 = false }
     render(p) { fakeVisor.renders.push(p); fakeVisor.shown = true; }, hide() { fakeVisor.hides++; fakeVisor.shown = false; }, close() { fakeVisor.closed++; }, setSize(s) { fakeVisor.sizes.push(s); return true; } };
   const fakeTray = { updates: [], destroyed: 0, update(v) { fakeTray.updates.push(v); }, destroy() { fakeTray.destroyed++; }, relabel() {} };
   const prefs = { glanceHidden: () => hidden, setGlanceHidden: (v) => { hidden = v; saved.push(v); } };
-  const reveals = [], helpers = [];
+  const reveals = [], helpers = [], order = [];
   const glance = installGlance({
     ipcMain: { on: (c, f) => { handlers.on[c] = f; }, handle: (c, f) => { handlers.handle[c] = f; } },
     screen: {}, BrowserWindow: class {}, Tray: class {}, Menu: {}, nativeImage: {}, fetch: async () => ({ ok: false }),
     getMainWindow: () => win, prefs, t: (k) => k, revealChat: (target) => reveals.push(target), isWayland: wayland, platform: "linux",
     setTimer: (fn, ms) => { const t = { fn, ms }; timers.push(t); return t; }, clearTimer: () => {},
     createVisor: () => { visors.push(fakeVisor); return fakeVisor; }, createTray: () => { trays.push(fakeTray); return fakeTray; },
-    x11Available: x11, createHelperVisor: (hooks) => { const h = { ...fakeVisor, hooks, closed: 0, renders: [], hides: 0, shown: false, contents: () => null, visible: () => h.shown, render(p) { h.renders.push(p); h.shown = true; }, hide() { h.hides++; h.shown = false; }, close() { h.closed++; } }; helpers.push(h); return h; },
+    x11Available: x11, resolveInset, createHelperVisor: (hooks) => { const h = { ...fakeVisor, hooks, closed: 0, renders: [], hides: 0, shown: false, contents: () => null, visible: () => h.shown, setTopInset(n) { order.push(["inset", n]); }, render(p) { order.push(["render"]); h.renders.push(p); h.shown = true; }, hide() { h.hides++; h.shown = false; }, close() { h.closed++; } }; helpers.push(h); return h; },
   });
   const page = { sender: contents, senderFrame: mainFrame };
   const send = (raw, event = page) => handlers.on["glance:feed"](event, raw);
-  return { helpers, glance, handlers, log, timers, fakeVisor, fakeTray, visors, trays, saved, reveals, page, contents, mainFrame, win, send, visorEvent: { sender: visorContents, senderFrame: visorContents.mainFrame } };
+  return { order, helpers, glance, handlers, log, timers, fakeVisor, fakeTray, visors, trays, saved, reveals, page, contents, mainFrame, win, send, visorEvent: { sender: visorContents, senderFrame: visorContents.mainFrame } };
 }
 
 test("AC-15 a feed from a subframe, another page or the wrong origin is ignored", () => {
@@ -304,4 +304,41 @@ test("setTopInset re-places a live visor, and a getter is read on every placemen
   dynamic.setSize({ width: 210, height: 40 });
   assert.equal(sets.at(-1).y, 48);
   dynamic.close();
+});
+
+const settle = () => new Promise((r) => setImmediate(r));
+
+test("on Wayland with the helper the inset is resolved first and sent before the render, and again after hide then show", async () => {
+  let calls = 0, answer = 35;
+  const w = world({ wayland: true, x11: true, resolveInset: async () => { calls++; return answer; } });
+  w.send(feed(bot("a", { state: "needs", ask: approval })));
+  assert.equal(w.helpers.length, 1);
+  assert.equal(w.helpers[0].renders.length, 0);
+  await settle();
+  assert.deepEqual(w.order, [["inset", 35], ["render"]]);
+  assert.equal(calls, 1);
+  w.send(feed(bot("a", { state: "needs", ask: approval, line: "More" })));
+  await settle();
+  assert.equal(calls, 1);
+  w.send(feed());
+  assert.equal(w.helpers[0].hides, 1);
+  const before = w.order.length;
+  answer = 50;
+  w.send(feed(bot("a", { state: "needs", ask: approval })));
+  await settle();
+  assert.equal(calls, 2);
+  assert.deepEqual(w.order.slice(before), [["inset", 50], ["render"]]);
+});
+
+test("without a resolver the visor draws at once", () => {
+  const w = world({ wayland: true, x11: true });
+  w.send(feed(bot("a")));
+  assert.equal(w.helpers[0].renders.length, 1);
+});
+
+test("a resolver that rejects still draws, with inset 0", async () => {
+  const w = world({ wayland: true, x11: true, resolveInset: async () => { throw new Error("x"); } });
+  w.send(feed(bot("a")));
+  await settle();
+  assert.deepEqual(w.order, [["inset", 0], ["render"]]);
 });
