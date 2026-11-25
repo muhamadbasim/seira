@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 
 export const TOP_INSET_MAX = 400;
 /** A compositor probe that takes longer than this counts as no answer. */
-export const PROBE_WAIT_MS = 500;
+export const PROBE_WAIT_MS = 1500;
 export const TOP_INSET_ENV = "SEIRA_GLANCE_TOP_INSET";
 
 /** A whole number of px from 0 to TOP_INSET_MAX, else null. */
@@ -47,20 +47,25 @@ const PROVIDERS = [hyprland, sway];
 
 /**
  * How many px at the top of the primary display a panel keeps, when Electron's work area does not show it (Linux only).
- * Order: a real work area wins (0 here), then SEIRA_GLANCE_TOP_INSET, then the compositor, else 0. It never throws.
+ * Order: a real work area wins (0 here), then SEIRA_GLANCE_TOP_INSET, then the compositor.
+ * 0 means nothing reserves the top. null means a compositor was there to ask and gave no usable answer. It never throws.
  */
 export async function resolveTopInset({ platform, env, display, run = runCommand, timeoutMs = PROBE_WAIT_MS }) {
   try {
     if (platform !== "linux" || !display?.bounds || !display.workArea || display.workArea.y > display.bounds.y) return 0;
     const set = validInset(env?.[TOP_INSET_ENV]);
     if (set !== null) return set;
+    let asked = false;
     for (const provider of PROVIDERS) {
       if (!provider.when(env ?? {})) continue;
+      asked = true;
       const found = await probe(provider, display, run, timeoutMs);
       if (found !== null) return found;
     }
-  } catch {}
-  return 0;
+    return asked ? null : 0;
+  } catch {
+    return null;
+  }
 }
 
 async function probe(provider, display, run, timeoutMs) {

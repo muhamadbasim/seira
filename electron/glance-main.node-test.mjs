@@ -371,3 +371,36 @@ test("a probe that was started before a hide is discarded, and the next show pro
   await settle();
   assert.deepEqual(w.order, [["inset", 50], ["render"]]);
 });
+
+test("a failed probe draws with the last good value, does not mark the inset ready, and the next show probes again", async () => {
+  const answers = [null, 35, null];
+  let calls = 0;
+  const w = world({ wayland: true, x11: true, resolveInset: async () => { calls++; return answers.shift(); } });
+  const shown = () => feed(bot("a", { state: "needs", ask: approval }));
+  w.send(shown());
+  await settle();
+  assert.deepEqual(w.order, [["inset", 0], ["render"]]);
+  w.send(feed());
+  w.order.length = 0;
+  w.send(shown());
+  await settle();
+  assert.equal(calls, 2);
+  assert.deepEqual(w.order, [["inset", 35], ["render"]]);
+  w.send(feed());
+  w.order.length = 0;
+  w.send(shown());
+  await settle();
+  assert.equal(calls, 3);
+  assert.deepEqual(w.order, [["inset", 35], ["render"]]);
+});
+
+test("a failed probe does not probe again while the visor stays up", async () => {
+  let calls = 0;
+  const w = world({ wayland: true, x11: true, resolveInset: async () => { calls++; return null; } });
+  w.send(feed(bot("a", { state: "needs", ask: approval })));
+  await settle();
+  w.send(feed(bot("a", { state: "needs", ask: approval, line: "More" })));
+  await settle();
+  assert.equal(calls, 1);
+  assert.equal(w.helpers[0].renders.length, 2);
+});

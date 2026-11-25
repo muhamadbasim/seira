@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveTopInset, TOP_INSET_MAX } from "./glance-top-inset.mjs";
+import { resolveTopInset, TOP_INSET_MAX, PROBE_WAIT_MS } from "./glance-top-inset.mjs";
 
 const wrong = { bounds: { x: 0, y: 0, width: 1920, height: 1200 }, workArea: { x: 0, y: 0, width: 1920, height: 1200 } };
 const hypr = { HYPRLAND_INSTANCE_SIGNATURE: "sig" };
@@ -50,11 +50,11 @@ test("Hyprland: no matching monitor falls back to the focused one", async () => 
   assert.equal(await resolveTopInset({ platform: "linux", env: hypr, display: odd, run }), 60);
 });
 
-test("Hyprland: an out-of-range or odd reserved value gives 0", async () => {
+test("Hyprland: an out-of-range or odd reserved value gives null", async () => {
   for (const top of [-5, 9999, 12.5, "x", null]) {
-    assert.equal(await resolveTopInset({ platform: "linux", env: hypr, display: wrong, run: fixed(JSON.stringify([{ x: 0, y: 0, focused: true, reserved: [0, top, 0, 0] }])) }), 0, String(top));
+    assert.equal(await resolveTopInset({ platform: "linux", env: hypr, display: wrong, run: fixed(JSON.stringify([{ x: 0, y: 0, focused: true, reserved: [0, top, 0, 0] }])) }), null, String(top));
   }
-  assert.equal(await resolveTopInset({ platform: "linux", env: hypr, display: wrong, run: fixed(JSON.stringify([{ x: 0, y: 0, focused: true }])) }), 0);
+  assert.equal(await resolveTopInset({ platform: "linux", env: hypr, display: wrong, run: fixed(JSON.stringify([{ x: 0, y: 0, focused: true }])) }), null);
 });
 
 const workspaces = (...list) => JSON.stringify(list.map(([x, y, focused, visible = true]) => ({ focused, visible, rect: { x, y, width: 1920, height: 1100 } })));
@@ -80,15 +80,22 @@ test("Hyprland is tried before Sway", async () => {
   assert.equal(run.calls.length, 1);
 });
 
-test("a failing probe, bad JSON, a missing binary or a timeout all give 0 and never throw", async () => {
+test("a failing probe, bad JSON, a missing binary or a timeout give null, never 0, and never throw", async () => {
   const base = { platform: "linux", display: wrong };
-  assert.equal(await resolveTopInset({ ...base, env: hypr, run: async () => { throw new Error("ENOENT"); } }), 0);
-  assert.equal(await resolveTopInset({ ...base, env: hypr, run: fixed("not json") }), 0);
-  assert.equal(await resolveTopInset({ ...base, env: hypr, run: fixed("{}") }), 0);
-  assert.equal(await resolveTopInset({ ...base, env: sway, run: fixed("[]") }), 0);
-  assert.equal(await resolveTopInset({ ...base, env: hypr, run: () => { throw new Error("sync"); } }), 0);
-  assert.equal(await resolveTopInset({ ...base, env: hypr, run: never, timeoutMs: 20 }), 0);
+  assert.equal(await resolveTopInset({ ...base, env: hypr, run: async () => { throw new Error("ENOENT"); } }), null);
+  assert.equal(await resolveTopInset({ ...base, env: hypr, run: fixed("not json") }), null);
+  assert.equal(await resolveTopInset({ ...base, env: hypr, run: fixed("{}") }), null);
+  assert.equal(await resolveTopInset({ ...base, env: sway, run: fixed("[]") }), null);
+  assert.equal(await resolveTopInset({ ...base, env: hypr, run: () => { throw new Error("sync"); } }), null);
+  assert.equal(await resolveTopInset({ ...base, env: hypr, run: never, timeoutMs: 20 }), null);
+});
+
+test("no compositor to ask is a real 0", async () => {
   assert.equal(await resolveTopInset({ platform: "linux", env: {}, display: wrong, run: fixed("x") }), 0);
+});
+
+test("the probe waits 1500 ms by default", () => {
+  assert.equal(PROBE_WAIT_MS, 1500);
 });
 
 test("a failing Hyprland probe still lets Sway answer", async () => {

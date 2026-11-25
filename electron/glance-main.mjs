@@ -108,7 +108,7 @@ export function installGlance({ ipcMain, screen, BrowserWindow, Tray, Menu, nati
         Promise.resolve().then(() => resolveInset()).catch(() => 0).then((top) => {
           if (probing === round) probing = null;
           if (round !== hideCount || visor !== target) { draw(); return; }
-          inset = validInset(top) ?? 0;
+          inset = validInset(top) ?? inset;
           insetReady = true;
           target.setTopInset?.(inset);
           draw();
