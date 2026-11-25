@@ -160,3 +160,26 @@ test("an inset line reaches the visor's setTopInset only when valid", async () =
   for (const top of [0, 35, 400, -1, "35", 1e6]) w.feedLine({ t: "inset", top });
   assert.deepEqual(w.visor.insets, [0, 35, 400]);
 });
+
+test("the helper grows to 380x160 and stays at y 43 after the inset line, in either order, and after a display change", async () => {
+  const sets = [], handlers = {}, frame = {};
+  let win = null;
+  const display = { bounds: { x: 0, y: 0, width: 1000, height: 800 }, workArea: { x: 0, y: 0, width: 1000, height: 800 } };
+  class Win extends EventEmitter {
+    constructor() { super(); win = this; this.webContents = Object.assign(new EventEmitter(), { mainFrame: frame, setWindowOpenHandler() {}, executeJavaScript: async () => {} }); }
+    isDestroyed() { return false; } setBounds(b) { sets.push(b); } setAlwaysOnTop() {} setVisibleOnAllWorkspaces() {} showInactive() {} hide() {} destroy() {}
+    loadURL() { return Promise.resolve(); }
+  }
+  const screen = Object.assign(new EventEmitter(), { getPrimaryDisplay: () => display });
+  const input = new EventEmitter();
+  const app = Object.assign(new EventEmitter(), { setPath() {}, whenReady: () => Promise.resolve(), quit() {} });
+  await runGlanceVisorHost({ app, BrowserWindow: Win, screen, ipcMain: { handle: (c, f) => { handlers[c] = f; } }, input, output: { write() {} }, argv: ["--seira-glance-visor=/tmp-x/g"] });
+  const line = (obj) => input.emit("data", `${JSON.stringify(obj)}\n`);
+  const grow = () => handlers["glance-visor:size"]({ sender: win.webContents, senderFrame: frame }, { width: 380, height: 160 });
+  line({ t: "inset", top: 35 });
+  line({ t: "render", payload: { entries: [] } });
+  assert.equal(await grow(), true);
+  assert.deepEqual(sets.at(-1), { x: 310, y: 43, width: 380, height: 160 });
+  screen.emit("display-metrics-changed");
+  assert.deepEqual(sets.at(-1), { x: 310, y: 43, width: 380, height: 160 });
+});

@@ -404,3 +404,44 @@ test("a failed probe does not probe again while the visor stays up", async () =>
   assert.equal(calls, 1);
   assert.equal(w.helpers[0].renders.length, 2);
 });
+
+function linuxWindow(options = {}) {
+  const sets = [];
+  class Fake extends EventEmitter {
+    constructor() { super(); this.webContents = Object.assign(new EventEmitter(), { setWindowOpenHandler() {}, executeJavaScript: async () => {}, loadURL() {} }); }
+    loadURL() { return Promise.resolve(); }
+    isDestroyed() { return false; } setAlwaysOnTop() {} setVisibleOnAllWorkspaces() {} showInactive() {} destroy() {}
+    setBounds(b) { sets.push(b); }
+  }
+  const display = { bounds: { x: 0, y: 0, width: 1920, height: 1200 }, workArea: { x: 0, y: 0, width: 1920, height: 1200 } };
+  const screen = Object.assign(new EventEmitter(), { getPrimaryDisplay: () => display });
+  const visor = createGlanceWindow({ BrowserWindow: Fake, screen, platform: "linux", preload: "p.cjs", ...options });
+  visor.render({ entries: [] });
+  return { sets, screen, visor };
+}
+
+test("a grown visor sits at y 43 under a 35 px inset, given as a number or a getter", () => {
+  for (const topInset of [35, () => 35]) {
+    const { sets, visor } = linuxWindow({ topInset });
+    visor.setSize({ width: 380, height: 160 });
+    assert.deepEqual(sets.at(-1), { x: 770, y: 43, width: 380, height: 160 });
+    visor.close();
+  }
+});
+
+test("growing first and setting the inset after keeps the height and moves to y 43", () => {
+  const { sets, visor } = linuxWindow();
+  visor.setSize({ width: 380, height: 160 });
+  assert.equal(sets.at(-1).y, 8);
+  visor.setTopInset(35);
+  assert.deepEqual(sets.at(-1), { x: 770, y: 43, width: 380, height: 160 });
+  visor.close();
+});
+
+test("a display change after growing keeps y 43", () => {
+  const { sets, screen, visor } = linuxWindow({ topInset: 35 });
+  visor.setSize({ width: 380, height: 160 });
+  screen.emit("display-metrics-changed");
+  assert.deepEqual(sets.at(-1), { x: 770, y: 43, width: 380, height: 160 });
+  visor.close();
+});
