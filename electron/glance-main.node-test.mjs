@@ -336,11 +336,24 @@ test("without a resolver the visor draws at once", () => {
   assert.equal(w.helpers[0].renders.length, 1);
 });
 
-test("a resolver that rejects still draws, with inset 0", async () => {
-  const w = world({ wayland: true, x11: true, resolveInset: async () => { throw new Error("x"); } });
-  w.send(feed(bot("a")));
+test("a resolver that rejects still draws, keeps the last good inset, and probes again on the next show", async () => {
+  const answers = [35, "reject"];
+  let calls = 0;
+  const w = world({ wayland: true, x11: true, resolveInset: async () => { calls++; const next = answers.shift(); if (next === "reject") throw new Error("x"); return next ?? 35; } });
+  const shown = () => feed(bot("a", { state: "needs", ask: approval }));
+  w.send(shown());
   await settle();
-  assert.deepEqual(w.order, [["inset", 0], ["render"]]);
+  w.send(feed());
+  w.order.length = 0;
+  w.send(shown());
+  await settle();
+  assert.deepEqual(w.order, [["inset", 35], ["render"]]);
+  w.send(feed());
+  w.order.length = 0;
+  w.send(shown());
+  await settle();
+  assert.equal(calls, 3);
+  assert.deepEqual(w.order, [["inset", 35], ["render"]]);
 });
 
 test("in the X11-only path the visor reads the resolved inset through its getter", async () => {
@@ -372,7 +385,7 @@ test("a probe that was started before a hide is discarded, and the next show pro
   assert.deepEqual(w.order, [["inset", 50], ["render"]]);
 });
 
-test("a failed probe draws with the last good value, does not mark the inset ready, and the next show probes again", async () => {
+test("a failed probe draws with the last good value, keeps the last good value and probes again on the next show", async () => {
   const answers = [null, 35, null];
   let calls = 0;
   const w = world({ wayland: true, x11: true, resolveInset: async () => { calls++; return answers.shift(); } });

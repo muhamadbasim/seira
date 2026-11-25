@@ -105,7 +105,7 @@ export function installGlance({ ipcMain, screen, BrowserWindow, Tray, Menu, nati
       if (probing !== hideCount) {
         const round = hideCount, target = visor;
         probing = round;
-        Promise.resolve().then(() => resolveInset()).catch(() => 0).then((top) => {
+        Promise.resolve().then(() => resolveInset()).catch(() => null).then((top) => {
           if (probing === round) probing = null;
           if (round !== hideCount || visor !== target) { draw(); return; }
           inset = validInset(top) ?? inset;

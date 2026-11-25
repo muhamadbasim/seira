@@ -182,4 +182,9 @@ test("the helper grows to 380x160 and stays at y 43 after the inset line, in eit
   assert.deepEqual(sets.at(-1), { x: 310, y: 43, width: 380, height: 160 });
   screen.emit("display-metrics-changed");
   assert.deepEqual(sets.at(-1), { x: 310, y: 43, width: 380, height: 160 });
+  line({ t: "hide" });
+  line({ t: "inset", top: 0 });
+  assert.equal(await grow(), true);
+  line({ t: "inset", top: 35 });
+  assert.deepEqual(sets.at(-1), { x: 310, y: 43, width: 380, height: 160 });
 });

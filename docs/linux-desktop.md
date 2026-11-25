@@ -293,7 +293,8 @@ for the panel's height when the visor opens and each time it appears again:
   for example `SEIRA_GLANCE_TOP_INSET=35`. See [environment-variables.md](environment-variables.md#glance-top-inset).
 
 GNOME and KDE already report the work area, so they need nothing. If the compositor tool is missing or does not
-answer within half a second, Glance falls back to the top of the screen, as before.
+answer within 1.5 seconds, Glance keeps the last panel height it found (the top of the screen the first time) and
+asks again the next time it appears.
 
 ## Enable local control
 
