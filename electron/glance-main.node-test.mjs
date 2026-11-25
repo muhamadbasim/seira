@@ -265,3 +265,43 @@ test("AC-08 turning Glance off or leaving closes the helper", () => {
   w2.glance.destroy();
   assert.equal(w2.helpers[0].closed, 1);
 });
+
+test("glanceBounds honours a top inset when the work area is wrong, and never double-counts a real one", () => {
+  const size = { width: 200, height: 40 };
+  const wrong = { bounds: { x: 0, y: 0, width: 1920, height: 1200 }, workArea: { x: 0, y: 0, width: 1920, height: 1200 } };
+  assert.equal(glanceBounds(wrong, "linux", size, 35).y, 43);
+  assert.equal(glanceBounds(wrong, "linux", size, 0).y, 8);
+  assert.equal(glanceBounds(wrong, "linux", size).y, 8);
+  const real = { bounds: wrong.bounds, workArea: { x: 0, y: 30, width: 1920, height: 1170 } };
+  assert.equal(glanceBounds(real, "linux", size, 35).y, 43);
+  assert.equal(glanceBounds(real, "linux", size, 10).y, 38);
+  assert.equal(glanceBounds(wrong, "darwin", size, 35).y, 0);
+});
+
+test("setTopInset re-places a live visor, and a getter is read on every placement", () => {
+  const sets = [];
+  class Fake extends EventEmitter {
+    constructor() { super(); this.webContents = Object.assign(new EventEmitter(), { setWindowOpenHandler() {}, executeJavaScript: async () => {}, loadURL() {} }); }
+    loadURL() { return Promise.resolve(); }
+    isDestroyed() { return false; } setAlwaysOnTop() {} setVisibleOnAllWorkspaces() {} showInactive() {} destroy() {}
+    setBounds(b) { sets.push(b); }
+  }
+  const display = { bounds: { x: 0, y: 0, width: 1920, height: 1200 }, workArea: { x: 0, y: 0, width: 1920, height: 1200 } };
+  const screen = Object.assign(new EventEmitter(), { getPrimaryDisplay: () => display });
+  const visor = createGlanceWindow({ BrowserWindow: Fake, screen, platform: "linux", preload: "p.cjs" });
+  visor.render({ entries: [] });
+  visor.setSize({ width: 200, height: 40 });
+  assert.equal(sets.at(-1).y, 8);
+  visor.setTopInset(35);
+  assert.equal(sets.at(-1).y, 43);
+  visor.close();
+  let inset = 20;
+  const dynamic = createGlanceWindow({ BrowserWindow: Fake, screen, platform: "linux", preload: "p.cjs", topInset: () => inset });
+  dynamic.render({ entries: [] });
+  dynamic.setSize({ width: 200, height: 40 });
+  assert.equal(sets.at(-1).y, 28);
+  inset = 40;
+  dynamic.setSize({ width: 210, height: 40 });
+  assert.equal(sets.at(-1).y, 48);
+  dynamic.close();
+});
