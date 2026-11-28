@@ -140,6 +140,35 @@ test("AC-12 hiding Glance closes it, saves the choice and keeps reading feeds", 
   assert.equal(restarted.visors.length, 0);
 });
 
+test("the window's page reads and sets Glance: off closes it, on shows it again without a restart", async () => {
+  const w = world();
+  w.send(feed(bot("a")));
+  assert.deepEqual(await w.handlers.handle["glance:state"](w.page), { on: true });
+  assert.deepEqual(await w.handlers.handle["glance:set"](w.page, false), { on: false });
+  assert.deepEqual(w.saved, [true]);
+  assert.equal(w.fakeVisor.closed, 1);
+  assert.deepEqual(await w.handlers.handle["glance:set"](w.page, true), { on: true });
+  assert.deepEqual(w.saved, [true, false]);
+  assert.equal(w.visors.length, 2, "the visor comes back for the bot still at work");
+  assert.equal(w.fakeVisor.shown, true);
+});
+
+test("only the window's own main frame reads or sets Glance", async () => {
+  const w = world();
+  const subframe = { sender: w.contents, senderFrame: { url: `${ORIGIN}/` } };
+  await assert.rejects(async () => w.handlers.handle["glance:state"](subframe));
+  await assert.rejects(async () => w.handlers.handle["glance:set"](subframe, false));
+  await assert.rejects(async () => w.handlers.handle["glance:set"]({ sender: {}, senderFrame: w.mainFrame }, false));
+  assert.deepEqual(w.saved, []);
+});
+
+test("turning Glance off from the menu or the tray tells the window's page", () => {
+  const w = world();
+  w.glance.setHidden(true);
+  w.glance.setHidden(false);
+  assert.deepEqual(w.log.filter((e) => e.channel === "glance:changed").map((e) => e.payload), [{ on: false }, { on: true }]);
+});
+
 test("AC-11 on Wayland the tray shows and the visor never does", () => {
   const w = world({ wayland: true });
   w.send(feed(bot("a", { state: "needs", ask: approval })));
